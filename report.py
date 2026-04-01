@@ -6,7 +6,7 @@ report.py
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-from strategy import current_signal, DEFAULT_LOOKBACK, DEFAULT_TIERS
+from strategy import current_signal, DEFAULT_LOOKBACK, DEFAULT_MA_WINDOW, DEFAULT_LOW_PCT, DEFAULT_HIGH_PCT
 from backtest import run_backtest, calc_metrics
 
 REPORT_DIR = Path(__file__).parent / "reports"
@@ -15,17 +15,20 @@ REPORT_DIR.mkdir(exist_ok=True)
 
 def print_summary(signal: dict, metrics: dict):
     date_str = datetime.today().strftime("%Y年%m月%d日")
-    print("=" * 45)
-    print(f"  沪深300 PE估值策略 月度报告")
+    print("=" * 50)
+    print(f"  沪深300 PE+PB估值策略 月度报告")
     print(f"  生成时间：{date_str}")
-    print("=" * 45)
+    print("=" * 50)
 
     print("\n【当前信号】")
-    print(f"  最新日期  : {signal['date']}")
-    print(f"  沪深300   : {signal['close']}")
-    print(f"  PE (TTM)  : {signal['pe']}")
-    print(f"  PE历史百分位 : {signal['pe_pct']}%")
-    print(f"  ▶ 建议仓位 : {int(signal['position'] * 100)}%")
+    print(f"  最新日期        : {signal['date']}")
+    print(f"  沪深300收盘     : {signal['close']}")
+    print(f"  PE (TTM)        : {signal['pe']}  （历史百分位 {signal['pe_pct']}%）")
+    print(f"  PB              : {signal['pb']}  （历史百分位 {signal['pb_pct']}%）")
+    print(f"  合成估值分位    : {signal['composite_pct']}%")
+    print(f"  趋势（>MA250）  : {'✓ 多头' if signal['trend_up'] else '✗ 空头（趋势过滤触发）'}")
+    print(f"  估值建议仓位    : {signal['raw_position']}%")
+    print(f"  ▶ 最终建议仓位  : {signal['position']}%")
 
     print("\n【策略 vs 基准（全历史）】")
     keys = ["总收益", "年化收益", "最大回撤", "年化波动", "夏普比率", "卡玛比率"]
@@ -35,19 +38,16 @@ def print_summary(signal: dict, metrics: dict):
         print(f"  {k:<8}: 策略 {s:>8}  |  基准 {b:>8}")
 
     print(f"\n  回测区间：{metrics['回测起始']} → {metrics['回测结束']}")
-    print("=" * 45)
+    print("=" * 50)
 
 
 def save_report(bt: pd.DataFrame, signal: dict, metrics: dict):
     today = datetime.today().strftime("%Y%m%d")
 
-    # 净值曲线
     nav_file = REPORT_DIR / f"nav_{today}.csv"
-    bt[["date", "strategy_nav", "benchmark_nav", "position", "pe", "pe_pct"]].to_csv(
-        nav_file, index=False
-    )
+    bt[["date", "strategy_nav", "benchmark_nav", "position",
+        "pe", "pb", "composite_pct", "trend_up"]].to_csv(nav_file, index=False)
 
-    # 摘要
     summary_file = REPORT_DIR / f"summary_{today}.txt"
     import io, sys
     buf = io.StringIO()
@@ -63,12 +63,13 @@ def save_report(bt: pd.DataFrame, signal: dict, metrics: dict):
 
 
 def generate_report(save: bool = True):
-    signal  = current_signal(lookback=DEFAULT_LOOKBACK, tiers=DEFAULT_TIERS)
-    bt      = run_backtest(lookback=DEFAULT_LOOKBACK, tiers=DEFAULT_TIERS)
+    signal  = current_signal(lookback=DEFAULT_LOOKBACK, ma_window=DEFAULT_MA_WINDOW,
+                             low_pct=DEFAULT_LOW_PCT, high_pct=DEFAULT_HIGH_PCT)
+    bt      = run_backtest(lookback=DEFAULT_LOOKBACK, ma_window=DEFAULT_MA_WINDOW,
+                           low_pct=DEFAULT_LOW_PCT, high_pct=DEFAULT_HIGH_PCT)
     metrics = calc_metrics(bt)
 
     print_summary(signal, metrics)
-
     if save:
         save_report(bt, signal, metrics)
 
