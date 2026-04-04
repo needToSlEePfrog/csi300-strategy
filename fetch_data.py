@@ -5,6 +5,7 @@ fetch_data.py
 
 import akshare as ak
 import pandas as pd
+import requests
 from pathlib import Path
 from datetime import datetime
 
@@ -19,14 +20,10 @@ PB_FILE    = DATA_DIR / "csi300_pb.csv"
 def fetch_price(start: str = "20100101") -> pd.DataFrame:
     """拉取沪深300日线价格（收盘价）"""
     print("正在获取沪深300价格数据...")
-    df = ak.index_zh_a_hist(
-        symbol="000300",
-        period="daily",
-        start_date=start,
-        end_date=datetime.today().strftime("%Y%m%d"),
-    )
-    df = df[["日期", "收盘"]].rename(columns={"日期": "date", "收盘": "close"})
+    df = ak.stock_zh_index_daily(symbol="sh000300")
+    df = df[["date", "close"]].copy()
     df["date"] = pd.to_datetime(df["date"])
+    df = df[df["date"] >= pd.to_datetime(start)]
     df = df.sort_values("date").reset_index(drop=True)
     df.to_csv(PRICE_FILE, index=False)
     print(f"价格数据已保存：{PRICE_FILE}（共 {len(df)} 条）")
@@ -35,10 +32,20 @@ def fetch_price(start: str = "20100101") -> pd.DataFrame:
 
 def fetch_pe(start: str = "20100101") -> pd.DataFrame:
     """拉取沪深300市盈率（PE-TTM）"""
+    from akshare.stock_feature.stock_a_pe_and_pb import hash_code, get_cookie_csrf
+    import py_mini_racer
+    from datetime import datetime as dt
     print("正在获取沪深300 PE数据...")
-    df = ak.index_value_hist_funddb(symbol="沪深300", indicator="市盈率")
-    df = df.rename(columns={"日期": "date", "市盈率": "pe"})
+    js = py_mini_racer.MiniRacer()
+    js.eval(hash_code)
+    token = js.call("hex", dt.now().date().isoformat()).lower()
+    url = "https://legulegu.com/api/stockdata/index-basic-pe"
+    params = {"token": token, "indexCode": "000300.SH"}
+    r = requests.get(url, params=params,
+                     **get_cookie_csrf(url="https://legulegu.com/stockdata/sz50-ttm-lyr"))
+    df = pd.DataFrame(r.json()["data"])
     df["date"] = pd.to_datetime(df["date"])
+    df = df.rename(columns={"ttmPe": "pe"})[["date", "pe"]]
     df = df[df["date"] >= pd.to_datetime(start)]
     df = df.sort_values("date").reset_index(drop=True)
     df.to_csv(PE_FILE, index=False)
@@ -48,15 +55,27 @@ def fetch_pe(start: str = "20100101") -> pd.DataFrame:
 
 def fetch_pb(start: str = "20100101") -> pd.DataFrame:
     """拉取沪深300市净率（PB）"""
+    from akshare.stock_feature.stock_a_pe_and_pb import hash_code, get_cookie_csrf
+    import py_mini_racer
+    from datetime import datetime as dt
     print("正在获取沪深300 PB数据...")
-    df = ak.index_value_hist_funddb(symbol="沪深300", indicator="市净率")
-    df = df.rename(columns={"日期": "date", "市净率": "pb"})
+    js = py_mini_racer.MiniRacer()
+    js.eval(hash_code)
+    token = js.call("hex", dt.now().date().isoformat()).lower()
+    url = "https://legulegu.com/api/stockdata/index-basic-pb"
+    params = {"token": token, "indexCode": "000300.SH"}
+    r = requests.get(url, params=params,
+                     **get_cookie_csrf(url="https://legulegu.com/stockdata/zz500-ttm-lyr"))
+    df = pd.DataFrame(r.json()["data"])
     df["date"] = pd.to_datetime(df["date"])
+    df = df.rename(columns={"pb": "pb"})[["date", "pb"]]
     df = df[df["date"] >= pd.to_datetime(start)]
     df = df.sort_values("date").reset_index(drop=True)
     df.to_csv(PB_FILE, index=False)
     print(f"PB数据已保存：{PB_FILE}（共 {len(df)} 条）")
     return df
+
+
 
 
 def load_price() -> pd.DataFrame:
